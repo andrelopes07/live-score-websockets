@@ -1,5 +1,5 @@
 {
-  "id": "e3311a35-e276-4382-8fa2-3ccc94a7d680",
+  "id": "f39b348e-c495-4d71-80ce-53626eaa41a7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -179,7 +179,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "home_score_non_negative": {
+          "name": "home_score_non_negative",
+          "value": "\"matches\".\"home_score\" >= 0"
+        },
+        "away_score_non_negative": {
+          "name": "away_score_non_negative",
+          "value": "\"matches\".\"away_score\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     }
   },

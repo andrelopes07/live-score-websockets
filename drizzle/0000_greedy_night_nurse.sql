@@ -24,7 +24,9 @@ CREATE TABLE "matches" (
 	"end_time" timestamp,
 	"home_score" integer DEFAULT 0 NOT NULL,
 	"away_score" integer DEFAULT 0 NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "home_score_non_negative" CHECK ("matches"."home_score" >= 0),
+	CONSTRAINT "away_score_non_negative" CHECK ("matches"."away_score" >= 0)
 );
 --> statement-breakpoint
 ALTER TABLE "commentary" ADD CONSTRAINT "commentary_match_id_matches_id_fk" FOREIGN KEY ("match_id") REFERENCES "public"."matches"("id") ON DELETE no action ON UPDATE no action;

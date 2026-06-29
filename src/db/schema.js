@@ -1,4 +1,5 @@
 import {
+  check,
   integer,
   jsonb,
   pgEnum,
@@ -7,6 +8,7 @@ import {
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const matchStatusEnum = pgEnum('match_status', [
   'scheduled',
@@ -14,18 +16,25 @@ export const matchStatusEnum = pgEnum('match_status', [
   'finished',
 ]);
 
-export const matches = pgTable('matches', {
-  id: serial('id').primaryKey(),
-  sport: text('sport').notNull(),
-  homeTeam: text('home_team').notNull(),
-  awayTeam: text('away_team').notNull(),
-  status: matchStatusEnum('status').default('scheduled').notNull(),
-  startTime: timestamp('start_time'),
-  endTime: timestamp('end_time'),
-  homeScore: integer('home_score').default(0).notNull(),
-  awayScore: integer('away_score').default(0).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+export const matches = pgTable(
+  'matches',
+  {
+    id: serial('id').primaryKey(),
+    sport: text('sport').notNull(),
+    homeTeam: text('home_team').notNull(),
+    awayTeam: text('away_team').notNull(),
+    status: matchStatusEnum('status').default('scheduled').notNull(),
+    startTime: timestamp('start_time'),
+    endTime: timestamp('end_time'),
+    homeScore: integer('home_score').default(0).notNull(),
+    awayScore: integer('away_score').default(0).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    check('home_score_non_negative', sql`${t.homeScore} >= 0`),
+    check('away_score_non_negative', sql`${t.awayScore} >= 0`),
+  ],
+);
 
 export const commentary = pgTable('commentary', {
   id: serial('id').primaryKey(),
