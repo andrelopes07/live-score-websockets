@@ -1,5 +1,7 @@
 import {WebSocket, WebSocketServer} from "ws";
 
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 function sendJson(socket, payload) {
     if (socket.readyState !== WebSocket.OPEN) return;
 
@@ -21,11 +23,30 @@ export default function attachWebSocketServer(server) {
         maxPayload: 1024 * 1024, // 1MB
     });
 
+    wss.on("error", console.error);
+
     wss.on('connection', (socket) => {
+        socket.isAlive = true;
+
         sendJson(socket, { type: "welcome" });
 
         socket.on("error", console.error);
+
+        socket.on("pong", () => {
+            socket.isAlive = true;
+        });
     });
+
+    const heartbeat = setInterval(() => {
+        wss.clients.forEach((socket) => {
+            if (socket.isAlive === false) return socket.terminate();
+
+            socket.isAlive = false;
+            socket.ping();
+        });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    wss.on("close", () => clearInterval(heartbeat));
 
     function broadcastMatchCreated(match) {
         broadcast(wss, { type: "match_created", data: match });
