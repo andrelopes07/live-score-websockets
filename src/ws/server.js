@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { wsArcjet } from "../arcjet.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const MAX_BUFFERED_AMOUNT = 1024 * 1024; // 1MB
 
 const matchSubscribers = new Map();
 
@@ -54,6 +55,12 @@ function broadcastToMatch(matchId, payload) {
 
   for (const client of subscribers){
     if (client.readyState === WebSocket.OPEN) {
+      if (client.bufferedAmount > MAX_BUFFERED_AMOUNT) {
+        cleanupSubscriptions(client);
+        client.terminate();
+        continue;
+      }
+
       client.send(message);
     }
   }
@@ -66,6 +73,12 @@ function handleMessage(socket, data) {
     message = JSON.parse(data.toString());
   } catch {
     sendJson(socket, { type: "error", message: "Invalid JSON" });
+    return;
+  }
+
+  if (message === null || typeof message !== "object" || Array.isArray(message)) {
+    sendJson(socket, { type: "error", message: "Invalid message" });
+    return;
   }
 
   const isValidMatchId = Number.isInteger(message.matchId);
@@ -90,42 +103,62 @@ function handleMessage(socket, data) {
 
 export default function attachWebSocketServer(server) {
   const wss = new WebSocketServer({
-    server,
+    noServer: true,
     path: "/ws",
     maxPayload: 1024 * 1024, // 1MB
   });
 
   wss.on("error", console.error);
 
-  wss.on('connection', async (socket, req) => {
-    if (wsArcjet) {
-      try {
-        const decision = await wsArcjet.protect(req);
+  server.on("upgrade", async (req, socket, head) => {
+    const onSocketError = (error) => {
+      console.error("WS upgrade socket error", error);
+      socket.destroy();
+    };
+    socket.on("error", onSocketError);
 
-        if (decision.isDenied()) {
-          const code = decision.reason.isRateLimit() ? 1013 : 1008;
-          const reason = decision.reason.isRateLimit() ? "Rate limit exceeded" : "Access denied";
+    const rejectUpgrade = (status, reason) => {
+      socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    };
 
-          socket.close(code, reason);
-          return;
-        }
-
-      } catch (e) {
-        console.error("WS connection error", e);
-        socket.close(1011, "Server security error");
-        return;
-      }
+    if (!wss.shouldHandle(req)) {
+      rejectUpgrade(404, "Not Found");
+      return;
     }
 
+    try {
+      if (wsArcjet) {
+        const decision = await wsArcjet.protect(req);
+
+        if (socket.destroyed || !socket.readable || !socket.writable) return;
+
+        if (decision.isDenied()) {
+          if (decision.reason.isRateLimit()) {
+            rejectUpgrade(429, "Too Many Requests");
+          } else {
+            rejectUpgrade(403, "Forbidden");
+          }
+          return;
+        }
+      }
+
+      if (socket.destroyed || !socket.readable || !socket.writable) return;
+
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        socket.removeListener("error", onSocketError);
+        wss.emit("connection", ws, req);
+      });
+    } catch (error) {
+      console.error("WS upgrade error", error);
+      if (!socket.destroyed) rejectUpgrade(503, "Service Unavailable");
+    }
+  });
+
+  server.on("close", () => wss.close());
+
+  wss.on('connection', (socket) => {
     socket.isAlive = true;
-
     socket.subscriptions = new Set();
-
-    sendJson(socket, { type: "welcome" });
-
-    socket.on("message", (data ) => {
-      handleMessage(socket, data);
-    });
 
     socket.on("error", () => {
       socket.terminate();
@@ -140,6 +173,12 @@ export default function attachWebSocketServer(server) {
     socket.on("pong", () => {
       socket.isAlive = true;
     });
+
+    socket.on("message", (data ) => {
+      handleMessage(socket, data);
+    });
+
+    sendJson(socket, { type: "welcome" });
   });
 
   const heartbeat = setInterval(() => {

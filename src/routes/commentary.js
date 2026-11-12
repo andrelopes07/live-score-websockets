@@ -53,10 +53,19 @@ commentaryRouter.post('/', async (req, res) => {
     }
 
     try {
-        const [entry] = await db.insert(commentary).values({
-            ...parsedBody.data,
-            matchId: parsedParams.data.id,
-        }).returning();
+        let entry;
+        try {
+            [entry] = await db.insert(commentary).values({
+                ...parsedBody.data,
+                matchId: parsedParams.data.id,
+            }).returning();
+        } catch (error) {
+            if (error?.cause?.code === '23503' && // PostgreSQL match does not exist.
+                error.cause.constraint === 'commentary_match_id_matches_id_fk') {
+                return res.status(404).json({ error: "Match not found" });
+            }
+            throw error;
+        }
 
         if (res.app.locals.broadcastCommentary) {
             res.app.locals.broadcastCommentary(entry.matchId, entry);
