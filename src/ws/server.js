@@ -118,6 +118,7 @@ export default function attachWebSocketServer(server) {
     socket.on("error", onSocketError);
 
     const rejectUpgrade = (status, reason) => {
+      socket.once("finish", () => socket.destroy());
       socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
     };
 
